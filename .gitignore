@@ -1,0 +1,88 @@
+# 构建产物（Xcode 的派生数据目录，由 dm/ios 下的脚本生成）
+.iosdd/
+.iosdd_mac/
+.iosdd_*/
+.DS_Store
+
+# 本机编译产物；游戏文件与密钥保存在仓库外的 smbw-mac-work。
+# Local build outputs; game files and keys live outside the repository in smbw-mac-work.
+__pycache__/
+*.pyc
+dm/host/dmhost
+dm/host/gen/
+dm/tools/nx_extract/bin/
+dm/tools/nx_extract/obj/
+
+# 私人输入与游戏派生产物不得随源码发布。
+# Private inputs and game-derived artifacts must not ship with the source.
+*.keys
+*.nsp
+*.xci
+*.nca
+*.nso
+*.tik
+*.cert
+*.metallib
+*.spv
+*.bfsha
+*.bnsh
+*.bntx
+*.bffnt
+*.patched.bin
+*.ipa
+*.app/
+RomFS/
+romfs/
+ExeFS/
+exefs/
+/keys/
+/smbw-work/
+/smbw-mac-work/
+
+# 本地测试的可执行文件与调试符号。
+# Local test executables and debug symbols.
+*.dSYM/
+*.pdb
+/dm/gfx/tests/t_render_enable
+/dm/gfx/tests/t_texture_alias
+/dm/gfx/tests/t_write_texels_cache
+/dm/gfx/tests/t_upload_lifetime
+/dm/gfx/tests/t_replaced_resources
+/dm/gfx/tests/t_descriptor_pool
+/dm/gfx/tests/t_storage_lifetime
+/dm/gfx/tests/t_diagnostic_lifetime
+/dm/gfx/tests/t_pool_api_lifetime
+/dm/gfx/tests/t_registration_trace
+/dm/gfx/tests/t_memstat_lifetime
+/dm/gfx/tests/t_residency_registration_lifetime
+/dm/gfx/tests/t_record_refs
+/dm/gfx/tests/t_storage_reclaim
+
+# 本地排查与测评过程文件；发布图表单独放在 docs/figures。
+# Local investigation and benchmark intermediates; publication figures live in docs/figures.
+/docs/agents/
+/docs/benchmarks/
+/scripts/performance.md
+/scripts/validate-*
+/scripts/plot-*.py
+/scripts/export-*.py
+/scripts/summarize-*.py
+/scripts/requirements-plots.txt
+/run/
+/out/
+/build/
+/.venv/
+*.log
+*.sav
+
+# 图形回归测试的本地可执行文件；保留测试源码与配套数据。
+# Local graphics regression executables; retain test sources and supporting data.
+/dm/gfx/tests/t_*
+!/dm/gfx/tests/t_*.c
+!/dm/gfx/tests/t_*.m
+!/dm/gfx/tests/t_*.h
+!/dm/gfx/tests/t_*.py
+!/dm/gfx/tests/t_*.sh
+!/dm/gfx/tests/t_*.txt
+!/dm/gfx/tests/t_*.tsv
+!/dm/gfx/tests/t_*.json

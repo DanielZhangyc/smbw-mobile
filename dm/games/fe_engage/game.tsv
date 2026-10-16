@@ -1,0 +1,59 @@
+# 火焰纹章 Engage（Switch，基础版 v0 + 更新 2.0.0 = v327680）的游戏档案。Mac 上能到标题画面；NVN 句柄表按全库着色器实测，内存分区为 Mac 起机所设
+# Game profile of Fire Emblem Engage (Switch, base game v0 + update 2.0.0 = v327680). It reaches the title screen on the Mac; the NVN handle tables are measured over all its shaders, the memory partition is set for Mac bring-up
+# 格式见 dm/games/README.md | Format: see dm/games/README.md
+# Unity 2020.3.18f1（IL2CPP），SDK 12.3.7：着色器是 UnityFS 包与 data.unity3d 里的 Shader 对象（shader_split.py 经 unityfs.py 读出） | Unity 2020.3.18f1 (IL2CPP), SDK 12.3.7: the shaders are Shader objects in UnityFS bundles and data.unity3d (read by shader_split.py through unityfs.py)
+
+# ---- 身份 | Identity ----
+title_id	0100A6301214E000
+program_id	0100A6301214E000
+
+# ---- App ----
+app_name	FE Engage
+bundle_id	org.feengage.app
+ipa	FEEngage.ipa
+app_category	public.app-category.strategy-games
+
+# ---- 版本 | Versions ----
+# 只解了合并 2.0.0 的那份；基础版单独的构建号用到时再补 | only the merged 2.0.0 copy is extracted; the base game's own build IDs are added when needed
+build	v327680	2.0.0	main=8c08b9719e085f91847b5e0f935d9488	subsdk0=bffed55ea46c1b48ddeabcacdfbf81bf	sdk=56ec24747ec9e7f19b3efb062483a19d
+package	v327680
+shader_versions	v327680
+
+# ---- 文件 | Files ----
+# 装载顺序同 Horizon：main、subsdk*、sdk（subsdk0 = NintendoSDK_movie） | load order as on Horizon: main, subsdk*, sdk (subsdk0 = NintendoSDK_movie)
+modules	main subsdk0 sdk
+romfs_marker	Data/data.unity3d
+zip_store	.bundle:.wem:.unity3d:.metallib
+
+# ---- 内存 | Memory ----
+# NPDM 声明系统资源 16 MB，所以 IsVirtualAddressMemoryEnabled 为真：nninitStartup 把整个空闲内存（约 3.2 GB）作虚拟地址内存交给 StandardAllocator，
+# 要在别名区里一次分到这么大的地址区域（较新 SDK 的 AddressRegionManager 先占别名区开头约 1 GB 作节点区）。马力欧的 2.875 GB 别名区不够（StandardAllocator::Initialize 中止）。
+# The NPDM declares 16 MB of system resource, so IsVirtualAddressMemoryEnabled is true: nninitStartup hands all free memory (about 3.2 GB) to StandardAllocator as virtual address memory,
+# which needs one address region that large in the alias region (newer SDKs' AddressRegionManager first takes about 1 GB at the start of the alias region as its node area). Mario's 2.875 GB alias region is too small (StandardAllocator::Initialize aborts).
+# Engage 不调 SetHeapSize：全部内存经别名区（MapPhysicalMemory，实测映射一直用到别名区顶端），线程栈在栈区里随机放。所以堆区只留 128 MB，
+# 整块 6 GB = 前置 256 MB + 别名区 5.375 GB + 栈区 256 MB + 堆区 128 MB，正好是 iOS 不带「扩展虚拟寻址」授权时单块预留的上限（原先 Mac 起机用 8 GB、别名区 5.5 GB）
+# Engage never calls SetHeapSize: all its memory goes through the alias region (MapPhysicalMemory; measured mappings reach the top of the alias region), and thread stacks are placed at random in the stack region. So the heap region keeps only 128 MB,
+# and the 6 GB block = 256 MB in front + 5.375 GB alias region + 256 MB stack region + 128 MB heap region, exactly the largest single reservation iOS allows without the "extended virtual addressing" entitlement (Mac bring-up used 8 GB with a 5.5 GB alias region)
+# 别名区的地址也是 Unity 的：它的低层虚拟分配器自己 AllocateAddressRegion（每块按尺寸对齐，2.25 MB 占 4 MB、16.25 MB 占 20 MB），序章战斗前已占约 1.2 GB。
+# 节点区 1 GB 再占掉就不够了，所以 patch_nso.py 给本作 sdk 构建登记了剪口，把节点区缩到 62 MB（真机别名区 64 GB，不在乎这点）。
+# The alias region's address space is Unity's too: its low-level virtual allocator calls AllocateAddressRegion itself (each block aligned by size: 2.25 MB takes 4 MB, 16.25 MB takes 20 MB), about 1.2 GB before the prologue battle.
+# With the 1 GB node area taken as well that is not enough, so patch_nso.py registers a cut for this game's sdk build that shrinks the node area to 62 MB (the hardware's alias region is 64 GB and does not care).
+mem_reserve	0x180000000
+mem_alias	0x158000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+
+# ---- NVN 驱动常量段（dmsh_build.py 出包、nvn_mtl.m 运行时现填；按全库着色器实测） | NVN driver constant segments (dmsh_build.py at packaging, nvn_mtl.m filled at run time; measured over all shaders) ----
+# 旧驱动布局（同 D2R）：c2 贴图句柄表 0x168 + 8 r（128 槽）、分离采样器表 0x568 + 8 r；Unity 只用分离贴图 / 采样器（BindSeparateTexture / Sampler）。图像表与 c0 存储缓冲表未实测，先沿用
+# Older driver layout (as D2R): c2 texture handle table 0x168 + 8 r (128 slots), separate sampler table 0x568 + 8 r; Unity uses only separate textures / samplers (BindSeparateTexture / Sampler). The image table and the c0 storage buffer table are not measured yet and stay as they were
+nvn_tex_base	0x168
+nvn_tex_slots	128
+nvn_samp_base	0x568
+nvn_img_base	0x120
+nvn_img_slots	8
+nvn_ssbo_bases	vs=0x110 ps=0x510 cs=0x310
+
+# ---- 着色器拆分（shader_split.py；Unity Shader 对象，读法见 unityfs.py） | Shader split (shader_split.py; Unity Shader objects, read by unityfs.py) ----
+# 引擎自带（data.unity3d、Resources/unity default resources）归 engine，Addressables 资源包归 assets | engine built-ins (data.unity3d, Resources/unity default resources) go to engine, the Addressables bundles to assets
+shader_groups	/data.unity3d=engine /Resources/=engine /StreamingAssets/=assets
+shader_note	Engage 着色器
