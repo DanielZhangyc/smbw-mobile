@@ -57,7 +57,7 @@ flowchart LR
 - **Temporary storage and page mapping**: temporary space is reused according to command lifetimes to avoid overwriting data still in use. The game uses 4 KiB pages and the host uses 16 KiB pages; unmapping reclaims only whole host pages fully contained within the unmapped range, preserving partially covered edge pages.
 - **Graphics adaptation**: a separate copy is used when a render target is also sampled. Command data that may be reused prematurely is snapshotted on submission. Shaders are translated offline, then loaded and prewarmed at runtime.
 - **Audio and input**: audio and input are connected through Apple platform APIs, with handling for window focus changes.
-- **Controller vibration**: GameController and Core Haptics map the game's vibration commands to the left/right or overall haptic channels supported by the controller. Intensity adjustment is supported, and haptic output stops on focus loss, disconnection or exit. The current implementation approximates intensity and cannot yet reproduce the dual-frequency effect of Switch HD Rumble.
+- **Controller vibration**: the default GameController and Core Haptics path approximates intensity on the controller's supported channels. An optional [native Switch 2 Pro BLE path](docs/ns2-pro-haptics.zh-CN.md) preserves independent dual-band commands, verified with physical controller probes and gameplay. Initial feedback reported finer but weak vibration; the revised gain and player-light behavior still need physical confirmation. Absolute force is not console-calibrated. Both paths handle focus loss, disconnection and exit.
 
 ## Build and launch
 
