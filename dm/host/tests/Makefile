@@ -78,6 +78,11 @@ $(B)/%.orig.bin: $(EXEFS)/% | $(B)
 $(B):
 	mkdir -p $@
 .PHONY: run tsan
+.PHONY: ns2
+ns2: $(B)/t_ns2_rumble
+	$(B)/t_ns2_rumble
+$(B)/t_ns2_rumble: t_ns2_rumble.c ../ns2_rumble.c ../ns2.h ../dm_input.h | $(B)
+	clang -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -o $@ t_ns2_rumble.c ../ns2_rumble.c -lm
 tsan: $(B)/t_audio_spsc_tsan
 	$(B)/t_audio_spsc_tsan
 $(B)/t_condvar: t_condvar.c t_condvar_stub.c ../hle_thread.c ../dm.h | $(B)
