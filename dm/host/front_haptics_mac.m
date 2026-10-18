@@ -4,6 +4,7 @@
 #import <CoreHaptics/CoreHaptics.h>
 #include "dm.h"
 #include "dm_input.h"
+#include "ns2.h"
 #include <math.h>
 #include <errno.h>
 #include <ctype.h>
@@ -292,6 +293,9 @@ static DMHapticSession *g_haptic_session; // 只在工作队列访问 | Accessed
 @end
 
 void dm_haptic_bind(void *ptr, int active) {
+    // opt-in 在入口完整路由；未连接或协议失败时不改走 CoreHaptics。
+    // Route the complete opt-in at the boundary; disconnection or protocol failure never selects CoreHaptics.
+    if (dm_ns2_enabled()) { (void)ptr; dm_ns2_set_active(active); return; }
     (void)haptic_config();
     GCController *controller=(__bridge GCController *)ptr;
     // 真实设备声明与引擎就绪分开：先让 HID 识别硬件通道，避免一次查询把异步准备窗口缓存为无设备。
@@ -333,6 +337,7 @@ void dm_haptic_bind(void *ptr, int active) {
     pthread_mutex_unlock(&g_haptic_mu);
 }
 int dm_haptic_shutdown(const char *reason, unsigned timeout_ms) {
+    if (dm_ns2_enabled()) return dm_ns2_shutdown(reason, timeout_ms);
     dispatch_queue_t queue=haptic_queue(); dispatch_group_t group=haptic_stops();
     uint64_t begin=now_ns();
     dispatch_time_t deadline=dispatch_time(DISPATCH_TIME_NOW,(int64_t)timeout_ms*NSEC_PER_MSEC);
@@ -365,11 +370,18 @@ int dm_haptic_shutdown(const char *reason, unsigned timeout_ms) {
         pending||errors?"【红】":"",(unsigned long long)now_ns(),reason?reason:"unknown",(now_ns()-begin)/1e6,pending,errors,pending?"incomplete":errors?"completed-with-errors":"completed");
     return !pending && !errors;
 }
-unsigned dm_haptic_capabilities(void) { pthread_mutex_lock(&g_haptic_mu); unsigned caps=g_haptic_caps; pthread_mutex_unlock(&g_haptic_mu); return caps; }
-// 仅供 HID 枚举 / 接受初始化请求：来自真实 GCDeviceHaptics 声明；引擎失败立即撤销。
-// For HID enumeration / accepting initialization only: real GCDeviceHaptics declarations, revoked immediately on engine failure.
-unsigned dm_haptic_device_capabilities(void) { pthread_mutex_lock(&g_haptic_mu); unsigned caps=g_haptic_device_caps; pthread_mutex_unlock(&g_haptic_mu); return caps; }
+unsigned dm_haptic_capabilities(void) {
+    if (dm_ns2_enabled()) return dm_ns2_capabilities();
+    pthread_mutex_lock(&g_haptic_mu); unsigned caps=g_haptic_caps; pthread_mutex_unlock(&g_haptic_mu); return caps;
+}
+// HID 枚举 / 初始化只用真实设备能力：GCDeviceHaptics 声明或 NS2 完整握手后的通道；故障立即撤销。
+// HID enumeration / initialization uses actual capabilities: GCDeviceHaptics declarations or fully initialized NS2 channels, revoked on failure.
+unsigned dm_haptic_device_capabilities(void) {
+    if (dm_ns2_enabled()) return dm_ns2_device_capabilities();
+    pthread_mutex_lock(&g_haptic_mu); unsigned caps=g_haptic_device_caps; pthread_mutex_unlock(&g_haptic_mu); return caps;
+}
 int dm_haptic_initialize(unsigned side) {
+    if (dm_ns2_enabled()) return dm_ns2_initialize(side);
     if (side>1) return 0;
     pthread_mutex_lock(&g_haptic_mu); unsigned bit=haptic_bit(side,g_haptic_device_caps); g_haptic_initialized |= bit; pthread_mutex_unlock(&g_haptic_mu);
     return bit!=0;
@@ -398,6 +410,7 @@ static void haptic_drain(void) {
     }
 }
 void dm_haptic_send(unsigned side, const dm_vibration_value *value) {
+    if (dm_ns2_enabled()) { dm_ns2_send(side, value); return; }
     if (side>1 || !value) return;
     dm_vibration_value raw=*value, bounded=haptic_value(raw);
     pthread_mutex_lock(&g_haptic_mu);
@@ -415,6 +428,7 @@ void dm_haptic_send(unsigned side, const dm_vibration_value *value) {
     pthread_mutex_unlock(&g_haptic_mu);
 }
 void dm_haptic_actual(unsigned side, dm_vibration_value *out) {
+    if (dm_ns2_enabled()) { dm_ns2_actual(side, out); return; }
     memset(out,0,sizeof *out); if(side>1) return;
     pthread_mutex_lock(&g_haptic_mu); *out=g_haptic_actual[side]; pthread_mutex_unlock(&g_haptic_mu);
 }

@@ -15,6 +15,7 @@ void mtl_set_ui_rect_fn(void (*fn)(double *y, double *h));
 static void ui_rect_frac(double *fy, double *fh) { int x, y, w, h, rw = 0, rh = 0; dm_ui_rect(&x, &y, &w, &h); if (dm_screen_real(&rw, &rh) && rh > 0) { *fy = (double)y / rh; *fh = (double)h / rh; } }   // 同 front_ios.m：界面矩形的纵向位置与高（占画面高的比例） | Same as front_ios.m: vertical position and height of the UI rectangle (as fractions of the frame height)
 __attribute__((constructor)) static void ui_shift_reg(void) { mtl_set_ui_rect_fn(ui_rect_frac); }   // 不开窗口的跑法（截图 / 闸门）也要生效，所以不放在建图层那里 | Must also take effect when running without a window (screenshots / gate checks), so it is not placed where the layer is created
 #include "front.h"
+#include "ns2.h"
 #include "hle.h"
 #include <signal.h>
 #include <sys/resource.h>
@@ -197,15 +198,27 @@ static void on_key(NSEvent *e, int down) {
     push();
 }
 
-typedef struct { void (*fn)(void); } guest_arg;
+typedef struct { void (*fn)(void); NSWindow *window; NSString *title; } guest_arg;
 static void *guest_tramp(void *p) {
     static char alt[65536];                       // 信号备用栈是每线程的；崩溃打印要在客体线程上也生效 | The signal alternate stack is per thread; crash printing must also work on the guest thread
     stack_t ss = {.ss_sp = alt, .ss_size = sizeof alt}; sigaltstack(&ss, 0);
+    if (dm_ns2_enabled()) {
+        // 先等真实校准与订阅完成，再让客体做一次性设备枚举；AppKit 主循环继续处理权限、焦点和退出。
+        // Wait for real calibration and subscriptions before one-shot guest enumeration; AppKit still handles permissions, focus and quit.
+        LOG("NS2 Pro BLE：等待连接就绪后启动游戏，请按手柄同步键；可从原生菜单退出");
+        while (dm_ns2_capabilities() != (DM_HAPTIC_LEFT | DM_HAPTIC_RIGHT)) usleep(10000);
+        guest_arg *arg = p;
+        dispatch_async(dispatch_get_main_queue(), ^{ arg->window.title = arg->title; });
+        dm_pad_reset(); LOG("NS2 Pro BLE：双侧通道已就绪，启动客体设备枚举");
+    }
     ((guest_arg *)p)->fn(); LOG("客体线程结束"); exit(0);
 }
 
 void front_run(void (*guest)(void)) {
-    if (!getenv("DM_WINDOW")) { guest(); return; }
+    if (!getenv("DM_WINDOW")) {
+        if (dm_ns2_enabled()) die("【红】DM_NS2_PRO=ble 需要 DM_WINDOW=1，以处理蓝牙权限和窗口生命周期");
+        guest(); return;
+    }
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -287,7 +300,8 @@ void front_run(void (*guest)(void)) {
         sync_focus(win, "startup");
         // 客体线程：栈 64 MiB（Switch 主线程栈由 npdm 指定，宿主给足）
         // Guest thread: 64 MiB stack (the Switch main thread stack is specified by npdm; the host gives plenty)
-        static guest_arg ga; ga.fn = guest;
+        static guest_arg ga; ga.fn = guest; ga.window = win; ga.title = win.title;
+        if (dm_ns2_enabled()) win.title = [NSString stringWithFormat:@"%@ — Waiting for Switch 2 Pro", ga.title];
         pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, 64u << 20);
         pthread_t th; if (pthread_create(&th, &a, guest_tramp, &ga)) die("pthread_create guest");
         [NSApp run];

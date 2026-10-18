@@ -2,13 +2,16 @@
 // Native Mac extended controllers: main-queue connection notifications and input events drive all state, without per-render-frame polling.
 // 支持系统识别的 Xbox / PlayStation / Nintendo 扩展布局，单玩家；可选摇杆按键 / Options 缺失时不合成按键。
 // Supports system-recognized Xbox / PlayStation / Nintendo extended layouts for one player; absent optional stick clicks / Options are not synthesized.
-// 触觉按真实设备能力异步接入；不提供六轴、Home / Capture、单只 Joy-Con 或配对界面；无线设备须先由 macOS 配对。
-// Haptics use actual device capabilities asynchronously; no motion, Home / Capture, single Joy-Con or pairing UI; wireless devices must first be paired through macOS.
+// 默认无线设备先由 macOS 配对；DM_NS2_PRO=ble 独占输入和触觉，直接连接处于发现状态的 Switch 2 Pro。
+// Default wireless devices pair through macOS; DM_NS2_PRO=ble exclusively routes input and haptics through a discoverable Switch 2 Pro.
+// 不提供六轴、Home / Capture、单只 Joy-Con 或配对界面。
+// No motion, Home / Capture, single Joy-Con or pairing UI.
 #import <GameController/GameController.h>
 #include <math.h>
 #include "front.h"
 #include "dm.h"
 #include "dm_input.h"
+#include "ns2.h"
 
 static NSMutableArray<GCController *> *g_controllers;
 static NSMutableArray<id> *g_controller_observers;
@@ -16,6 +19,7 @@ static GCController *g_controller;
 static BOOL g_controller_active;
 
 static void controller_release(void) { dm_pad_reset(); }
+static void ns2_exit(void) { (void)dm_ns2_shutdown("atexit", 600); }
 static int32_t controller_axis(float v) {
     return isfinite(v) ? (int32_t)(fmaxf(-1.f, fminf(1.f, v)) * DM_STICK_MAX) : 0;
 }
@@ -72,6 +76,16 @@ static void controller_attach(GCController *controller) {
 
 void front_controller_start(void) {
     NSCAssert(NSThread.isMainThread, @"Controller lifecycle must run on the main thread");
+    // 原生 NS2 独占实体手柄源；显式选择后不绑定 GameController 或虚拟手柄。
+    // Native NS2 owns the physical-pad source exclusively; selecting it skips GameController and virtual pads.
+    if (dm_ns2_enabled()) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            if (atexit(ns2_exit)) die("【红】NS2 Pro BLE 无法登记退出清理");
+            dm_ns2_start();
+        });
+        return;
+    }
     if (g_controllers) return;
     g_controllers = [NSMutableArray new]; g_controller_observers = [NSMutableArray new];
     GCController.shouldMonitorBackgroundEvents = NO;
@@ -105,6 +119,7 @@ void front_controller_start(void) {
 
 void front_controller_set_active(int active) {
     NSCAssert(NSThread.isMainThread, @"Controller lifecycle must run on the main thread");
+    if (dm_ns2_enabled()) { dm_ns2_set_active(active); return; }
     BOOL wanted = active != 0;
     if (g_controller_active == wanted) return;
     g_controller_active = wanted;
@@ -116,6 +131,7 @@ void front_controller_set_active(int active) {
 
 void front_controller_stop(void) {
     NSCAssert(NSThread.isMainThread, @"Controller lifecycle must run on the main thread");
+    if (dm_ns2_enabled()) { (void)dm_ns2_shutdown("controller-stop", 600); return; }
     g_controller_active = NO; controller_release();
     (void)dm_haptic_shutdown("controller-stop", 600);
     for (id observer in g_controller_observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
