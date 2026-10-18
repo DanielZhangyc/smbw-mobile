@@ -161,6 +161,12 @@ static void push(void) {
 static void release_keyboard(void) {
     g_w = g_a = g_s = g_d = 0; g_btn = 0; dm_input_reset();
 }
+// 窗口关闭与 AppKit 退出共用宿主收尾，确保触觉、音频、GPU 和诊断都完成清理。
+// Window close and AppKit termination share host shutdown to clean up haptics, audio, GPU and diagnostics.
+static void front_shutdown(const char *reason) {
+    release_keyboard(); dm_touch_set(NULL, 0); front_controller_stop();
+    dm_host_shutdown(reason);
+}
 // App 与窗口通知的顺序不固定；每次按真实组合状态同步游戏、键盘和手柄。
 // App and window notifications may arrive in either order; synchronize guest, keyboard and controller from their actual combined state.
 static void sync_focus(NSWindow *win, const char *event) {
@@ -203,6 +209,13 @@ void front_run(void (*guest)(void)) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        // 手工启动 AppKit 时没有 nib 菜单；显式注册原生退出动作，Command-Q 才能由菜单处理。
+        // A manually started AppKit app has no nib menu; register native termination so the menu handles Command-Q.
+        NSMenu *menu = [NSMenu new], *appMenu = [NSMenu new];
+        NSMenuItem *appItem = [NSMenuItem new]; appItem.submenu = appMenu; [menu addItem:appItem];
+        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:[@"Quit " stringByAppendingString:@DM_GAME_APP_NAME]
+                                                   action:@selector(terminate:) keyEquivalent:@"q"];
+        quit.target = NSApp; [appMenu addItem:quit]; NSApp.mainMenu = menu;
         NSRect r = NSMakeRect(0, 0, 1280, 720);
         NSWindow *win = [[NSWindow alloc] initWithContentRect:r
                                                     styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
@@ -256,7 +269,7 @@ void front_run(void (*guest)(void)) {
             dm_touch_set(&t, 1); return e;
         }];
         [[NSNotificationCenter defaultCenter] addObserverForName:NSWindowWillCloseNotification object:win queue:nil
-                                                      usingBlock:^(NSNotification *n) { (void)n; release_keyboard(); front_controller_stop(); exit(0); }];
+                                                      usingBlock:^(NSNotification *n) { (void)n; front_shutdown("window-close"); }];
         // 生命周期（hle.h / dm.h）：失焦 → 2、拿回焦点 → 1；最小化 → 3 + 音频暂停 + GPU 挂起，还原 → 恢复（随后拿回焦点 → 1）
         // Lifecycle (hle.h / dm.h): focus lost → 2, focus regained → 1; minimized → 3 + audio paused + GPU suspended, restored → resume (followed by focus regained → 1)
         NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
@@ -270,7 +283,7 @@ void front_run(void (*guest)(void)) {
         [nc addObserverForName:NSApplicationDidBecomeActiveNotification object:NSApp queue:nil usingBlock:^(NSNotification *n) { (void)n; sync_focus(win, "become-active"); }];
         [nc addObserverForName:NSWindowDidEnterFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; sync_focus(win, "enter-fullscreen"); }];
         [nc addObserverForName:NSWindowDidExitFullScreenNotification object:win queue:nil usingBlock:^(NSNotification *n) { (void)n; sync_focus(win, "exit-fullscreen"); }];
-        [nc addObserverForName:NSApplicationWillTerminateNotification object:NSApp queue:nil usingBlock:^(NSNotification *n) { (void)n; front_controller_stop(); }];
+        [nc addObserverForName:NSApplicationWillTerminateNotification object:NSApp queue:nil usingBlock:^(NSNotification *n) { (void)n; front_shutdown("AppKit-terminate"); }];
         sync_focus(win, "startup");
         // 客体线程：栈 64 MiB（Switch 主线程栈由 npdm 指定，宿主给足）
         // Guest thread: 64 MiB stack (the Switch main thread stack is specified by npdm; the host gives plenty)
@@ -278,7 +291,7 @@ void front_run(void (*guest)(void)) {
         pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, 64u << 20);
         pthread_t th; if (pthread_create(&th, &a, guest_tramp, &ga)) die("pthread_create guest");
         [NSApp run];
-        front_controller_stop();
+        front_shutdown("AppKit-run-return");
     }
 }
 
